@@ -1,0 +1,56 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2013/05/nuspec.xsd">
+  <metadata>
+    <id>PeterO.Cbor</id>
+    <version>4.5.5</version>
+    <title>CBOR (Concise Binary Object Representation)</title>
+    <authors>Peter Occil</authors>
+    <owners>Peter Occil</owners>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <license type="expression">CC0-1.0</license>
+    <licenseUrl>https://licenses.nuget.org/CC0-1.0</licenseUrl>
+    <projectUrl>https://github.com/peteroupc/CBOR</projectUrl>
+    <description>A C# implementation of Concise Binary Object Representation (CBOR), a general-purpose binary data format defined in RFC 8949.</description>
+    <summary></summary>
+    <releaseNotes>Version 4.5.5
+
+- Fixes a problem that can occur when serializing 'float' values in some circumstances
+
+Version 4.5.3
+
+- More bug fixes, including a fix to a problem that can occur when reading from compressed or network streams
+
+Version 4.5.2
+
+- Bug and regression fixes
+
+Version 4.5.1
+
+- Fix reported security issue
+
+Version 4.5:
+
+- Add support for JSON Pointers and JSON Patches
+- Add option to keep map key order when decoding CBOR and JSON
+- Add option to write JSON using only ASCII characters
+- CBORObject.ToString renders strings as ASCII
+- Add support for deserializing CBOR objects to IReadOnlyList, IReadOnlyCollection, and ReadOnlyDictionary
+
+Note that after version 4.5x, the CBOR library's repository will stop including special projects for .NET 2.0 and .NET 4.0, leaving the .NET-Standard project for building the library.</releaseNotes>
+    <tags>cbor data serialization binary json</tags>
+    <dependencies>
+      <group targetFramework=".NETStandard1.0">
+        <dependency id="PeterO.URIUtility" version="1.0.0" />
+        <dependency id="PeterO.Numbers" version="1.8.2" />
+      </group>
+      <group targetFramework=".NETFramework2.0">
+        <dependency id="PeterO.URIUtility" version="1.0.0" />
+        <dependency id="PeterO.Numbers" version="1.8.2" />
+      </group>
+      <group targetFramework=".NETFramework4.0">
+        <dependency id="PeterO.URIUtility" version="1.0.0" />
+        <dependency id="PeterO.Numbers" version="1.8.2" />
+      </group>
+    </dependencies>
+  </metadata>
+</package>

@@ -1,0 +1,37 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2012/06/nuspec.xsd">
+  <metadata>
+    <id>PeterO.Numbers</id>
+    <version>1.8.2</version>
+    <title>Arbitrary-Precision Number Library</title>
+    <authors>Peter Occil</authors>
+    <owners>Peter Occil</owners>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <license type="expression">CC0-1.0</license>
+    <licenseUrl>https://licenses.nuget.org/CC0-1.0</licenseUrl>
+    <projectUrl>https://github.com/peteroupc/Numbers</projectUrl>
+    <description>A C# library that supports arbitrary-precision binary and decimal floating-point numbers and rational numbers with arbitrary-precision components, and supports arithmetic with these numbers.</description>
+    <summary></summary>
+    <releaseNotes>Version 1.8.2
+
+- Fix bugs involving negative zero with ERational.FromEFloat and ERational.FromEDecimal
+
+Version 1.8.1
+
+- Fix bugs in EFloat string parsing in certain corner cases
+- Fix NaN roundtripping with From/ToSingleBits and From/ToDoubleBits
+
+Version 1.8
+
+- Add LowBits family of methods to EInteger
+- Add FromInt64AsUnsigned to EInteger, EDecimal, EFloat, and ERational
+- Add overload to FromBytes method of EInteger
+- Bug fixes</releaseNotes>
+    <tags>numbers arithmetic decimal math</tags>
+    <dependencies>
+      <group targetFramework=".NETStandard1.0" />
+      <group targetFramework=".NETFramework2.0" />
+      <group targetFramework=".NETFramework4.0" />
+    </dependencies>
+  </metadata>
+</package>
