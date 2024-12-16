@@ -19,6 +19,8 @@ public class NOOMeshConverter
     /// </summary>
     readonly Material _material;
 
+    readonly int _index_index;
+
     /// <summary>
     /// Vertex positions
     /// </summary>
@@ -90,21 +92,23 @@ public class NOOMeshConverter
     RegisteredBuffer _buffer;
     NOOComponent _buffer_view;
     NOOComponent _mat_component;
-    NOOComponent _mesh_component;
+    //NOOComponent _mesh_component;
+    CBORObject _patch_part;
 
-    public NOOMeshConverter(Mesh m, Material mat)
+    public NOOMeshConverter(Mesh m, Material mat, int index)
     {
         // This is slow right now. We read from the CPU side of things and convert. No memcpys available here :(
         // Note that meshes need to have some kind of readable flag set so we can do this.
         // We can speed this up by directly stealing from the GPU buffer, which is likely in a better format
         _mesh = m;
         _material = mat;
+        _index_index = index;
 
         _positions = m.vertices;
         _normals = m.normals;
         _uv = m.uv;
 
-        _index_list = m.GetIndices(0);
+        _index_list = m.GetIndices(_index_index);
 
         // Assuming some byte sizes of Vec3 and Vec2
         _position_byte_size = (3 * 4);
@@ -209,76 +213,87 @@ public class NOOMeshConverter
         return color;
     }
 
+    public struct MaterialData
+    {
+        public Color baseColor;
+        public Texture baseColorTexture;
+        public float roughness;
+        public float metallic;
+        public bool transparency;
+        public float opacity;
+    }
+
+    public static MaterialData ExtractMaterialData(Material material)
+    {
+        MaterialData data = new MaterialData();
+        if (material == null)
+        {
+            Debug.LogWarning("Material is null!");
+            return data;
+        }
+        // Handle Standard Shader
+        if (material.shader.name == "Standard")
+        {
+            Debug.Log("Standard material");
+            data.baseColor = material.HasProperty("_Color") ? material.GetColor("_Color") : Color.white;
+            data.baseColorTexture = material.HasProperty("_MainTex") ? material.GetTexture("_MainTex") : null;
+            data.metallic = material.HasProperty("_Metallic") ? material.GetFloat("_Metallic") : 0f;
+            data.roughness = material.HasProperty("_Glossiness") ? 1f - material.GetFloat("_Glossiness") : 1f; // Inverted glossiness for roughness
+            // Transparency (if rendering mode is transparent)
+            data.transparency = material.HasProperty("_Mode") && Mathf.Approximately(material.GetFloat("_Mode"), 3f);
+            data.opacity = data.transparency ? data.baseColor.a : 1.0f;
+        }
+        // Handle Universal Render Pipeline (URP) shaders
+        else if (material.shader.name.Contains("Universal Render Pipeline"))
+        {
+            Debug.Log($"URP material : {material.shader.name} {material.GetFloat("_Surface")}");
+            // Lit variant
+            if (material.shader.name.Contains("Lit"))
+            {
+                data.baseColor = material.HasProperty("_BaseColor") ? material.GetColor("_BaseColor") : Color.white;
+                data.baseColorTexture = material.HasProperty("_BaseMap") ? material.GetTexture("_BaseMap") : null;
+                data.metallic = material.HasProperty("_Metallic") ? material.GetFloat("_Metallic") : 0f;
+                data.roughness = material.HasProperty("_Smoothness") ? 1f - material.GetFloat("_Smoothness") : 1f; // Smoothness to roughness
+                // Transparency
+                data.transparency = material.HasProperty("_Surface") && material.GetFloat("_Surface") == 1f; // Surface type: Transparent
+                data.opacity = data.transparency ? data.baseColor.a : 1f;
+            }
+            // Unlit variant
+            else if (material.shader.name.Contains("Unlit"))
+            {
+                data.baseColor = material.HasProperty("_BaseColor") ? material.GetColor("_BaseColor") : Color.white;
+                data.baseColorTexture = material.HasProperty("_BaseMap") ? material.GetTexture("_BaseMap") : null;
+                // Unlit shaders typically have no metallic, roughness, or transparency
+                data.metallic = 0f;
+                data.roughness = 1f;
+                data.transparency = false;
+                data.opacity = 1f;
+            }
+        }
+        else
+        {
+            Debug.LogWarning($"Unsupported shader: {material.shader.name}");
+        }
+        return data;
+    }
+
     /// <summary>
     /// Convert a material to NOODLES format
     /// </summary>
     void MakeMat()
     {
-        var color = _material.color;
-
-        // Set do defaults
-        var metallic = 1.0;
-        var roughness = 1.0;
-
-        // The default shaders have this property for metallic.
-        // TODO: Check support for other shaders
-        if (_material.HasProperty("_Metallic"))
-        {
-            Debug.Log("Has metallic");
-            metallic = _material.GetFloat("_Metallic");
-        }
-
-        // Now we need to figure out roughness. Some shaders have it defined
-        // in the inverse way
-        if (_material.HasProperty("_Smoothness"))
-        {
-            float smoothness = _material.GetFloat("_Smoothness");
-            roughness = 1.0f - smoothness;
-        }
-        else if (_material.HasProperty("_Roughness"))
-        {
-            Debug.Log("Has roughness");
-            roughness = _material.GetFloat("_Roughness");
-        }
-        else if (_material.HasProperty("_Glossiness"))
-        {
-            Debug.Log("Has glossiness");
-            float glossiness = _material.GetFloat("_Glossiness");
-            roughness = 1.0f - glossiness;
-        }
-        
-        // Store albedo color
-        if (_material.HasProperty("_BaseColor"))
-        {
-            color = _material.GetColor("_BaseColor");
-        }
-        else if (_material.HasProperty("_Color"))
-        {
-            color = _material.GetColor("_Color");
-        }
-
-        if (_material.HasProperty("_MainTex"))
-        {
-            Texture color_texture = _material.GetTexture("_MainTex");
-
-            if (color_texture != null)
-            {
-
-            }
-
-            //(color_texture != null ? color_texture.name : "None")
-            //Debug.Log("Main Texture: " + );
-        }
-
-        Debug.Log($"M {color} {metallic} {roughness}");
+        var extract = ExtractMaterialData(_material);
 
         // Create PBR info block
         var pbr_info = CBORObject.NewMap()
             .Add("name", _material.name)
-            .Add("base_color", ColorToArray(color))
-            .Add("metallic", metallic)
-            .Add("roughness", roughness)
+            .Add("base_color", ColorToArray(extract.baseColor))
+            .Add("metallic", extract.metallic)
+            .Add("roughness", extract.roughness)
+            .Add("use_alpha", extract.transparency)
             ;
+
+        Debug.Log($"New mat {pbr_info}");
 
         // Complete NOODLES material
         _mat_component = NOOServer.Instance.World().material_list.Register(
@@ -348,21 +363,17 @@ public class NOOMeshConverter
             .Add("count", _index_list.Length)
             .Add("format", "U32");
 
-        var patch = CBORObject.NewMap()
+        _patch_part = CBORObject.NewMap()
             .Add("attributes", _attributes)
             .Add("vertex_count", _mesh.vertexCount)
             .Add("indices", index_part)
             .Add("type", "TRIANGLES")
             .Add("material", _mat_component.IDAsCBOR())
             ;
-
-        _mesh_component = NOOServer.Instance.World().geometry_list.Register(
-            CBORObject.NewMap().Add("name", _mesh.name).Add("patches", CBORObject.NewArray().Add(patch))
-        );
     }
 
     public RegisteredBuffer Buffer() { return _buffer;  }
     public NOOComponent BufferView() { return _buffer_view; }
     public NOOComponent MaterialComponent() { return _mat_component; }
-    public NOOComponent MeshComponent() { return _mesh_component; }
+    public CBORObject PatchPart() { return _patch_part; }
 }

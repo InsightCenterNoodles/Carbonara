@@ -361,24 +361,39 @@ public class NOOServer : MonoBehaviour {
     /// <param name="token"></param>
     /// <returns></returns>
     private async Task ProcessOutgoingMessages(CancellationToken token) {
+        Debug.Log("Starting broadcast task");
         while (!token.IsCancellationRequested) {
 
             OutgoingMessage message;
 
+            // Obtain a message from the global queue
             try
             {
                 message = await _outgoingMessages.DequeueAsync(token);
             }
             catch (Exception ex)
             {
-                Debug.Log($"Closing outgoing message reader: {ex}");
+                Debug.LogError($"Closing outgoing message reader: {ex}");
+                return;
+            }
+
+            byte[] message_bytes;
+
+            try
+            {
+                // We have to be careful here. Due to C# reference semantics,
+                // This content could be stored somewhere else, and modified
+                // in another thread
+                message_bytes = message.content.EncodeToBytes();
+             
+            } catch (Exception ex)
+            {
+                Debug.LogError($"Unable to encode message: {ex}");
                 return;
             }
 
             try
             { 
-                var message_bytes = message.content.EncodeToBytes();
-
                 if (message.target.HasValue)
                 {
                     Debug.Log($"Posting message to: {message.target}");
@@ -411,7 +426,7 @@ public class NOOServer : MonoBehaviour {
             }
             catch (Exception ex)
             {
-                Debug.Log($"Error posting message: {ex}");
+                Debug.LogError($"Error posting message: {ex}");
                 return;
             }
         }
@@ -433,7 +448,7 @@ public class NOOServer : MonoBehaviour {
                 var message = await client.outgoing.DequeueAsync(token);
 
                 await client.socket.SendAsync(message, true);
-                Debug.Log($"Posted message to client: {message.Length}");
+                //Debug.Log($"Posted message to client: {message.Length}");
             }
             catch (Exception ex)
             {
@@ -535,8 +550,10 @@ public class NOOServer : MonoBehaviour {
         var dump = _world.DumpToArray();
         dump.Add(35).Add(CBORObject.True);
 
-        var msg = new OutgoingMessage(from, dump);
-        msg.enable = true;
+        var msg = new OutgoingMessage(from, dump)
+        {
+            enable = true
+        };
 
         _outgoingMessages.Enqueue(msg);
     }

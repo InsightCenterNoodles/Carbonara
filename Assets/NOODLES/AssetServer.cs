@@ -35,6 +35,7 @@ public class Asset
 
     ~Asset()
     {
+        Debug.Log("Dropping asset handle");
         AssetServer.Instance.Remove(Identity);
     }
 }
@@ -131,6 +132,7 @@ class AssetServer
     /// <param name="id"></param>
     public void Remove(string id)
     {
+        Debug.Log($"Removing {id}");
         _blobStorage.TryRemove(id, out var _);
     }
 

@@ -61,31 +61,43 @@ class RegisteredMeshMat
     /// <summary>
     /// Buffer this registered mesh uses
     /// </summary>
-    RegisteredBuffer _buffer;
+    List<RegisteredBuffer> _buffer = new();
 
     /// <summary>
     /// Buffer view this mesh uses
     /// </summary>
-    NOOComponent _buffer_view;
+    List<NOOComponent> _buffer_view = new();
 
     /// <summary>
     /// Material this mesh uses
     /// </summary>
-    NOOComponent _mat_component;
+    List<NOOComponent> _mat_component = new();
 
     /// <summary>
     /// Mesh component that mirrors this mesh
     /// </summary>
     NOOComponent _mesh_component;
 
-    public RegisteredMeshMat(ValueTuple<Mesh, Material> pack)
+    public RegisteredMeshMat(ValueTuple<Mesh, Material[]> pack)
     {
-        var convert = new NOOMeshConverter(pack.Item1, pack.Item2);
+        Debug.Log("Building new mesh and material");
+        var patch_list = CBORObject.NewArray();
 
-        _buffer = convert.Buffer();
-        _buffer_view = convert.BufferView();
-        _mat_component = convert.MaterialComponent();
-        _mesh_component = convert.MeshComponent();
+        for (int i = 0; i < pack.Item2.Length; i++)
+        {
+            var convert = new NOOMeshConverter(pack.Item1, pack.Item2[i], i);
+
+            _buffer.Add(convert.Buffer());
+            _buffer_view.Add(convert.BufferView());
+            _mat_component.Add(convert.MaterialComponent());
+
+            patch_list.Add(convert.PatchPart());
+        }
+
+        var content = CBORObject.NewMap().Add("name", pack.Item1.name).Add("patches", patch_list);
+
+
+        _mesh_component = NOOServer.Instance.World().geometry_list.Register(content);
     }
 
     public CBORObject NoodlesID()
@@ -195,8 +207,10 @@ class NOORegistry<UnityItem, NOOItem> where NOOItem : class
     /// </summary>
     /// After a while, we will have a number of already collected entries; this
     /// function will clear those out, and should be called periodically. We do this in the install.
+    /// TODO REMOVE
     private void CleanUpStaleEntries()
     {
+        Debug.Log("Cleaning old references");
         _install_counter = 0;
 
         // Identify keys to remove where the reference is no longer valid
@@ -213,6 +227,47 @@ class NOORegistry<UnityItem, NOOItem> where NOOItem : class
     }
 }
 
+class LRUCache<Key, Value>
+{
+    class Slot
+    {
+        public Key key;
+        public Value value;
+    };
+
+    readonly List<Slot> _linear;
+    readonly Dictionary<Key, Slot> _storage;
+    private readonly Func<Key, Value> _maker;
+
+    public Value Get(Key key) {
+        if (_storage.TryGetValue(key, out var slot))
+        {
+            return slot.value;
+        }
+
+        // need to insert
+        var new_value = _maker(key);
+
+        while (_linear.Count > 64)
+        {
+            var at = _linear.Count - 1;
+            _storage.Remove(_linear[at].key);
+            _linear.RemoveAt(at);
+        }
+
+        var new_slot = new Slot {
+            key = key,
+            value = new_value,
+        };
+
+        _storage[key] = new_slot;
+        _linear.Prepend(new_slot);
+
+        return new_value;
+    }
+
+}
+
 /// <summary>
 /// Global list of registries
 /// </summary>
@@ -223,7 +278,7 @@ class NOORegistries
     /// <summary>
     /// Registry for meshes and materials
     /// </summary>
-    public NOORegistry<ValueTuple<Mesh, Material>, RegisteredMeshMat> MeshRegistry = new((ValueTuple<Mesh, Material> m) => new RegisteredMeshMat(m));
+    public NOORegistry<ValueTuple<Mesh, Material[]>, RegisteredMeshMat> MeshRegistry = new((ValueTuple<Mesh, Material[]> m) => new RegisteredMeshMat(m));
 
     //public NOORegistry<Texture, RegisteredTexture> TextureRegistry = new()
 

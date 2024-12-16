@@ -1,6 +1,8 @@
 ﻿using UnityEngine;
 
 using System;
+using System.Collections.Generic;
+using System.Linq;
 
 using PeterO.Cbor;
 
@@ -29,13 +31,13 @@ public class NOOWatcher : MonoBehaviour
     /// <summary>
     /// Last mesh and material this object has seen
     /// </summary>
-    Mesh _last_mesh = null;
-    Material _last_mat = null;
+    Mesh _last_mesh = null; 
+    Material[] _last_mats = null;
 
     /// <summary>
     /// Strong handle to a converted Unity mesh that mirrors the `_last_mesh`.
     /// </summary>
-    RegisteredMeshMat _last_registered_mesh = null;
+    RegisteredMeshMat _last_registered_mesh;
 
     private void Start()
     {
@@ -130,21 +132,34 @@ public class NOOWatcher : MonoBehaviour
     /// <param name="new_mesh">Current mesh from the filter</param>
     /// <param name="new_material">Current material from the renderer</param>
     /// <returns>true if changes have occurred</returns>
-    private bool CheckUpdateGeometryParts(CBORObject delta, Mesh new_mesh, Material new_material)
+    private bool CheckUpdateGeometryParts(CBORObject delta, Mesh new_mesh, Material[] new_materials)
     {
-        if (new_mesh == _last_mesh && new_material == _last_mat)
+        if (new_mesh == _last_mesh)
         {
-            return false;
+            if (_last_mats != null && new_materials != null)
+            {
+                if (Enumerable.SequenceEqual(new_materials, _last_mats))
+                {
+                    return false;
+                }
+            } else
+            {
+                if (_last_mats == new_materials)
+                {
+                    return false;
+                }
+            }
         }
 
         _last_mesh = new_mesh;
-        _last_mat = new_material;
+        _last_mats = new_materials;
 
-        if (_last_mesh != null && _last_mat != null)
+        if (_last_mesh != null && _last_mats != null)
         {
+            Debug.Log("Adding new mesh rep");
             _last_registered_mesh = NOORegistries.Instance.MeshRegistry.CheckRegister(
-                new ValueTuple<Mesh, Material>(_last_mesh, _last_mat)
-            );
+                    new ValueTuple<Mesh, Material[]>(_last_mesh, new_materials)
+                );
 
             var render_rep = CBORObject.NewMap().Add("mesh", _last_registered_mesh.NoodlesID());
 
@@ -152,6 +167,8 @@ public class NOOWatcher : MonoBehaviour
         }
         else
         {
+            Debug.Log("Clearing mesh rep");
+            _last_registered_mesh = null;
             delta.Add("null_rep", CBORObject.True);
         }
 
@@ -170,9 +187,9 @@ public class NOOWatcher : MonoBehaviour
         var renderer = GetComponent<Renderer>();
 
         Mesh mesh = (filter != null && filter.sharedMesh != null) ? filter.sharedMesh : null;
-        Material material = (renderer != null && renderer.sharedMaterial != null) ? renderer.sharedMaterial : null;
+        var materials = (renderer != null && renderer.sharedMaterial != null) ? renderer.sharedMaterials : null;
 
-        return CheckUpdateGeometryParts(delta, mesh, material);
+        return CheckUpdateGeometryParts(delta, mesh, materials);
     }
 
     private void OnTransformChildrenChanged()

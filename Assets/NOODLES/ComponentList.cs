@@ -1,5 +1,6 @@
 ﻿using System.Collections.Generic;
 
+using UnityEngine;
 using PeterO.Cbor;
 
 /// <summary>
@@ -25,7 +26,20 @@ public class NOOComponent
         _data = data;
         _sink = sink;
 
-        _sink.PublishCreate(data);
+        // Now here we have a problem. If we send data as is to the output
+        // queue, the item could be being processed in one thread
+        // while being modified in another.
+
+        // So, for the moment, we make a copy
+
+        var copy = CBORObject.NewMap();
+
+        foreach (var k_v in _data.Entries)
+        {
+            copy[k_v.Key] = k_v.Value;
+        }
+        
+        _sink.PublishCreate(copy);
     }
 
     /// <returns>The identity of this component as a CBOR object</returns>
@@ -82,7 +96,7 @@ public struct ComponentMessageIDs
 /// </summary>
 public class ComponentMessageSink
 {
-    AsyncQueue<OutgoingMessage> _notify;
+    readonly AsyncQueue<OutgoingMessage> _notify;
     ComponentMessageIDs _ids;
 
     /// <summary>
@@ -103,7 +117,7 @@ public class ComponentMessageSink
     public void PublishCreate(CBORObject obj)
     {
         var array = CBORObject.NewArray().Add(_ids.create_mid).Add(obj);
-        //Debug.Log($"Create {array}");
+        Debug.Log($"Create {array}");
         _notify.Enqueue(new OutgoingMessage(array));
     }
 
@@ -124,6 +138,7 @@ public class ComponentMessageSink
     public void PublishDelete()
     {
         var array = CBORObject.NewArray().Add(_ids.delete_mid).Add(CBORObject.Undefined);
+        Debug.Log($"Delete {array}");
         _notify.Enqueue(new OutgoingMessage(array));
     }
 
