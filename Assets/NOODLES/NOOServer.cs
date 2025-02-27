@@ -500,11 +500,22 @@ public class NOOServer : MonoBehaviour {
         {
             var child = transform.GetChild(c_i).gameObject;
             var watcher = child.GetComponent<NOOWatcher>();
+            var vis = child.GetComponent<NOOVisibility>();
 
             if (watcher == null)
             {
-                // Add it to the child
-                child.AddComponent<NOOWatcher>();
+                bool add = true;
+
+                if (vis != null && vis.visibility == NOOVis.IGNORE)
+                {
+                    add = false;
+                }
+
+                if (add)
+                {
+                    // Add it to the child
+                    child.AddComponent<NOOWatcher>();
+                }
             }
         }
     }

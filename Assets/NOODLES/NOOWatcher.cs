@@ -28,6 +28,9 @@ public class NOOWatcher : MonoBehaviour
     Quaternion _last_rotation;
     Vector3 _last_scale;
 
+    static readonly float update_timeout = (float)(1.0 / 10.0);
+    float current_timeout = update_timeout;
+
     /// <summary>
     /// Last mesh and material this object has seen
     /// </summary>
@@ -52,6 +55,15 @@ public class NOOWatcher : MonoBehaviour
 
     private void Update()
     {
+        current_timeout -= Time.deltaTime;
+
+        if (current_timeout > 0)
+        {
+            return;
+        }
+
+        current_timeout = update_timeout;
+
         var delta = CBORObject.NewMap();
 
         // Check if we need to actually send a delta
@@ -156,9 +168,12 @@ public class NOOWatcher : MonoBehaviour
 
         if (_last_mesh != null && _last_mats != null)
         {
-            Debug.Log("Adding new mesh rep");
+
+            //Debug.Log($"Adding new mesh rep {_last_mesh.GetInstanceID()} {string.Join(", ", mat_ids)}");
+
             _last_registered_mesh = NOORegistries.Instance.MeshRegistry.CheckRegister(
-                    new ValueTuple<Mesh, Material[]>(_last_mesh, new_materials)
+                    new ValueTuple<Mesh, Material[]>(_last_mesh, _last_mats),
+                    () => { return new RegisteredMeshMat(_last_mesh, _last_mats); }
                 );
 
             var render_rep = CBORObject.NewMap().Add("mesh", _last_registered_mesh.NoodlesID());
@@ -188,6 +203,8 @@ public class NOOWatcher : MonoBehaviour
 
         Mesh mesh = (filter != null && filter.sharedMesh != null) ? filter.sharedMesh : null;
         var materials = (renderer != null && renderer.sharedMaterial != null) ? renderer.sharedMaterials : null;
+
+        //Debug.Log("HERE " + delta + " " + mesh + " " + materials);
 
         return CheckUpdateGeometryParts(delta, mesh, materials);
     }

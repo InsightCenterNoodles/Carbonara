@@ -77,7 +77,7 @@ public class NOOComponent
     {
         var m = CBORObject.NewMap();
         m["id"] = _identity_cbor;
-        _sink.PublishDelete();
+        _sink.PublishDelete(m);
     }
 }
 
@@ -135,9 +135,9 @@ public class ComponentMessageSink
     /// <summary>
     /// Send a component delete message
     /// </summary>
-    public void PublishDelete()
+    public void PublishDelete(CBORObject obj)
     {
-        var array = CBORObject.NewArray().Add(_ids.delete_mid).Add(CBORObject.Undefined);
+        var array = CBORObject.NewArray().Add(_ids.delete_mid).Add(obj);
         Debug.Log($"Delete {array}");
         _notify.Enqueue(new OutgoingMessage(array));
     }

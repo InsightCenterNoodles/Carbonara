@@ -92,11 +92,13 @@ public class NOOMeshConverter
     RegisteredBuffer _buffer;
     NOOComponent _buffer_view;
     NOOComponent _mat_component;
-    //NOOComponent _mesh_component;
     CBORObject _patch_part;
+
+    RegisteredTexture _base_color_texture;
 
     public NOOMeshConverter(Mesh m, Material mat, int index)
     {
+        Debug.Log($"Starting conversion {m.GetInstanceID()} {mat.GetInstanceID()} {index}");
         // This is slow right now. We read from the CPU side of things and convert. No memcpys available here :(
         // Note that meshes need to have some kind of readable flag set so we can do this.
         // We can speed this up by directly stealing from the GPU buffer, which is likely in a better format
@@ -112,8 +114,8 @@ public class NOOMeshConverter
 
         // Assuming some byte sizes of Vec3 and Vec2
         _position_byte_size = (3 * 4);
-        _normal_byte_size = (3 * 4);
-        _uv_byte_size = (2 * 4);
+        _normal_byte_size = (3 * 4) * (_normals.Length > 0 ? 1 : 0);
+        _uv_byte_size = (2 * 4) * (_uv.Length > 0 ? 1 : 0);
 
         _vertex_size = _position_byte_size + _normal_byte_size + _uv_byte_size;
         _vertex_buffer_size = _vertex_size * m.vertexCount;
@@ -138,8 +140,13 @@ public class NOOMeshConverter
     /// Append a 2d vector attribute to the byte buffer
     /// </summary>
     /// <param name="attrib_data"></param>
-    void AddAttribute(Vector2[] attrib_data)
+    bool AddAttribute(Vector2[] attrib_data)
     {
+        if (attrib_data.Length < _mesh.vertexCount)
+        {
+            return false;
+        }
+
         for (int v_i = 0; v_i < _mesh.vertexCount; v_i++)
         {
             System.Buffer.BlockCopy(BitConverter.GetBytes(attrib_data[v_i].x), 0, _mesh_data, _cursor, sizeof(float));
@@ -147,14 +154,21 @@ public class NOOMeshConverter
             System.Buffer.BlockCopy(BitConverter.GetBytes(attrib_data[v_i].y), 0, _mesh_data, _cursor, sizeof(float));
             _cursor += sizeof(float);
         }
+
+        return true;
     }
 
     /// <summary>
     /// Append a 3d vector attribute to the byte buffer
     /// </summary>
     /// <param name="attrib_data"></param>
-    void AddAttribute(Vector3[] attrib_data)
+    bool AddAttribute(Vector3[] attrib_data)
     {
+        if (attrib_data.Length < _mesh.vertexCount)
+        {
+            return false;
+        }
+
         for (int v_i = 0; v_i < _mesh.vertexCount; v_i++)
         {
             System.Buffer.BlockCopy(BitConverter.GetBytes(attrib_data[v_i].x), 0, _mesh_data, _cursor, sizeof(float));
@@ -164,6 +178,8 @@ public class NOOMeshConverter
             System.Buffer.BlockCopy(BitConverter.GetBytes(attrib_data[v_i].z), 0, _mesh_data, _cursor, sizeof(float));
             _cursor += sizeof(float);
         }
+
+        return true;
     }
 
     /// <summary>
@@ -277,6 +293,8 @@ public class NOOMeshConverter
         return data;
     }
 
+    
+
     /// <summary>
     /// Convert a material to NOODLES format
     /// </summary>
@@ -292,6 +310,18 @@ public class NOOMeshConverter
             .Add("roughness", extract.roughness)
             .Add("use_alpha", extract.transparency)
             ;
+
+        if (extract.baseColorTexture != null)
+        {
+            _base_color_texture = NOORegistries.Instance.TextureRegistry.CheckRegister(
+                extract.baseColorTexture,
+                () => { return new RegisteredTexture(extract.baseColorTexture); }
+            );
+
+            var tex_ref = CBORObject.NewMap().Add("texture", _base_color_texture.NoodlesID());
+
+            pbr_info.Add("base_color_texture", tex_ref);
+        }
 
         Debug.Log($"New mat {pbr_info}");
 
@@ -328,12 +358,17 @@ public class NOOMeshConverter
     /// </summary>
     void BuildBytes()
     {
-
+        Debug.Log("START CONVERT " + _cursor + " " + _mesh.vertexCount);
         AddAttribute(_positions);
-        AddAttribute(_normals);
-        AddAttribute(_uv);
+        Debug.Log("AFTER POS " + _cursor);
+        bool normal_ok = AddAttribute(_normals);
+        Debug.Log("AFTER NORMAL " + _cursor);
+        bool uv_ok = AddAttribute(_uv);
+        Debug.Log("AFTER UV " + _cursor);
 
         AddIndex(_index_list);
+
+        Debug.Log("AFTER INDEX " + _cursor);
 
         // Register the buffer
         _buffer = new RegisteredBuffer(_mesh_data);
@@ -352,8 +387,8 @@ public class NOOMeshConverter
         _cursor = 0;
 
         AddAttributeInfo(3 * 4, "POSITION", "VEC3");
-        AddAttributeInfo(3 * 4, "NORMAL", "VEC3");
-        AddAttributeInfo(2 * 4, "TEXTURE", "VEC2");
+        if (normal_ok) AddAttributeInfo(3 * 4, "NORMAL", "VEC3");
+        if (uv_ok) AddAttributeInfo(2 * 4, "TEXTURE", "VEC2");
 
         MakeMat();
 
@@ -370,10 +405,12 @@ public class NOOMeshConverter
             .Add("type", "TRIANGLES")
             .Add("material", _mat_component.IDAsCBOR())
             ;
+        Debug.Log("END CONVERT " + _cursor + " " + _mesh.vertexCount);
     }
 
     public RegisteredBuffer Buffer() { return _buffer;  }
     public NOOComponent BufferView() { return _buffer_view; }
     public NOOComponent MaterialComponent() { return _mat_component; }
     public CBORObject PatchPart() { return _patch_part; }
+    public RegisteredTexture BaseColorTexture() { return _base_color_texture; }
 }

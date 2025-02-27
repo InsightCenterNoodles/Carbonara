@@ -68,6 +68,8 @@ class RegisteredMeshMat
     /// </summary>
     List<NOOComponent> _buffer_view = new();
 
+    List<RegisteredTexture> _reg_textures = new();
+
     /// <summary>
     /// Material this mesh uses
     /// </summary>
@@ -78,23 +80,25 @@ class RegisteredMeshMat
     /// </summary>
     NOOComponent _mesh_component;
 
-    public RegisteredMeshMat(ValueTuple<Mesh, Material[]> pack)
+    public RegisteredMeshMat(Mesh mesh, Material[] mats)
     {
         Debug.Log("Building new mesh and material");
         var patch_list = CBORObject.NewArray();
 
-        for (int i = 0; i < pack.Item2.Length; i++)
+        for (int i = 0; i < mats.Length; i++)
         {
-            var convert = new NOOMeshConverter(pack.Item1, pack.Item2[i], i);
+            var convert = new NOOMeshConverter(mesh, mats[i], i);
 
             _buffer.Add(convert.Buffer());
             _buffer_view.Add(convert.BufferView());
             _mat_component.Add(convert.MaterialComponent());
 
+            _reg_textures.Add(convert.BaseColorTexture());
+
             patch_list.Add(convert.PatchPart());
         }
 
-        var content = CBORObject.NewMap().Add("name", pack.Item1.name).Add("patches", patch_list);
+        var content = CBORObject.NewMap().Add("name", mesh.name).Add("patches", patch_list);
 
 
         _mesh_component = NOOServer.Instance.World().geometry_list.Register(content);
@@ -109,7 +113,7 @@ class RegisteredMeshMat
 /// <summary>
 /// Represents a texture exported over NOODLES. Automatically cleans itself up after going out of scope.
 /// </summary>
-class RegisteredTexture
+public class RegisteredTexture
 {
     /// <summary>
     /// Buffer this registered texture uses
@@ -123,10 +127,68 @@ class RegisteredTexture
     NOOComponent _image;
     NOOComponent _texture;
 
+    static byte[] MakeTextureBytes(Texture texture)
+    {
+        if (texture == null)
+        {
+            return null;
+        }
+
+        if (!texture.isReadable)
+        {
+            Debug.LogError("Texture is not readable; ensure the texture is readable in the import settings");
+            return null;
+        }
+
+        if (texture is Texture2D tex2d)
+        {
+            var bytes = tex2d.EncodeToPNG();
+
+            if (bytes == null)
+            {
+                Debug.LogError("Unable to encode texture to bytes");
+            }
+
+            return bytes;
+        }
+
+        Debug.LogError("Unable to handle non-2d textures at this time");
+        return null;
+    }
 
     public RegisteredTexture(Texture texture)
     {
-        
+        var tex_bytes = MakeTextureBytes(texture);
+
+        if (tex_bytes == null)
+        {
+            return;
+        }
+
+        _buffer = new RegisteredBuffer(tex_bytes);
+
+        // Register the view
+        _buffer_view = NOOServer.Instance.World().buffer_view_list.Register(
+            CBORObject.NewMap()
+            .Add("source_buffer", _buffer.NoodlesID())
+            .Add("type", "GEOMETRY")
+            .Add("offset", 0)
+            .Add("length", tex_bytes.Length)
+        );
+
+        // Register the image
+        _image = NOOServer.Instance.World().image_list.Register(
+            CBORObject.NewMap()
+            .Add("buffer_source", _buffer_view.IDAsCBOR())
+        );
+
+        // Register the texture
+        _texture = NOOServer.Instance.World().texture_list.Register(
+            CBORObject.NewMap()
+            .Add("name", texture.name)
+            .Add("image", _image.IDAsCBOR())
+        );
+
     }
 
     public CBORObject NoodlesID()
@@ -143,20 +205,24 @@ class RegisteredTexture
 class NOORegistry<UnityItem, NOOItem> where NOOItem : class
 {
     // Map of unity items to noodles items
-    readonly Dictionary<UnityItem, WeakReference<NOOItem>> _registry = new();
+    readonly Dictionary<UnityItem, WeakReference<NOOItem>> _registry;
 
-    // because C# is weak with generics...
-    private Func<UnityItem, NOOItem> _maker;
 
     private int _install_counter = 0;
 
     /// <summary>
     /// Create a registry
     /// </summary>
-    /// <param name="f">A function that takes a unity item and returns a mirror noodles item</param>
-    public NOORegistry(Func<UnityItem, NOOItem> f)
+    public NOORegistry()
     {
-        _maker = f;
+        _registry = new();
+    }
+
+    /// <summary>
+    /// Create a registry
+    /// </summary>
+    public NOORegistry(IEqualityComparer<UnityItem> comparer) {
+        _registry = new(comparer);
     }
 
     /// <summary>
@@ -164,19 +230,26 @@ class NOORegistry<UnityItem, NOOItem> where NOOItem : class
     /// </summary>
     /// <param name="item"></param>
     /// <returns></returns>
-    public NOOItem CheckRegister(UnityItem item)
+    public NOOItem CheckRegister(UnityItem item, Func<NOOItem> func)
     {
+        Debug.Log($"Checking for existing {item.GetHashCode()}");
         if (!_registry.TryGetValue(item, out var value))
         {
-            value = InstallItem(item);
+            Debug.Log($"Need to build {item.GetHashCode()}");
+            value = InstallItem(item, func);
         }
+
+        // Value should be valid now
 
         if (value.TryGetTarget(out NOOItem rm))
         {
+            Debug.Log("Target exists, returning");
             return rm;
         }
 
-        value = InstallItem(item);
+        // No target. Which means we need to rebuild
+
+        value = InstallItem(item, func);
 
         value.TryGetTarget(out rm);
 
@@ -188,7 +261,7 @@ class NOORegistry<UnityItem, NOOItem> where NOOItem : class
     /// </summary>
     /// <param name="item"></param>
     /// <returns></returns>
-    private WeakReference<NOOItem> InstallItem(UnityItem item)
+    private WeakReference<NOOItem> InstallItem(UnityItem item, Func<NOOItem> func)
     {
         _install_counter++;
 
@@ -197,7 +270,7 @@ class NOORegistry<UnityItem, NOOItem> where NOOItem : class
             CleanUpStaleEntries();
         }
 
-        var ret = new WeakReference<NOOItem>(_maker(item));
+        var ret = new WeakReference<NOOItem>(func());
         _registry[item] = ret;
         return ret;
     }
@@ -278,12 +351,29 @@ class NOORegistries
     /// <summary>
     /// Registry for meshes and materials
     /// </summary>
-    public NOORegistry<ValueTuple<Mesh, Material[]>, RegisteredMeshMat> MeshRegistry = new((ValueTuple<Mesh, Material[]> m) => new RegisteredMeshMat(m));
+    public NOORegistry<ValueTuple<Mesh, Material[]>, RegisteredMeshMat> MeshRegistry = new(new MeshMatComparer());
 
-    //public NOORegistry<Texture, RegisteredTexture> TextureRegistry = new()
+    public NOORegistry<Texture, RegisteredTexture> TextureRegistry = new();
 
     NOORegistries()
     {
 
+    }
+}
+
+class MeshMatComparer : IEqualityComparer<ValueTuple<Mesh, Material[]>> {
+    public bool Equals((Mesh, Material[]) x, (Mesh, Material[]) y)
+    {
+        return GetHashCode(x) == GetHashCode(y);
+    }
+
+    public int GetHashCode((Mesh, Material[]) obj)
+    {
+        int arr_hash = 0;
+        foreach (var mat in obj.Item2)
+        {
+            arr_hash = HashCode.Combine(mat, arr_hash);
+        }
+        return obj.Item1.GetHashCode() ^ arr_hash;
     }
 }
