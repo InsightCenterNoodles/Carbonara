@@ -6,7 +6,7 @@ This repository contains code to help replicate Unity scenes over the NOODLES pr
 ## Prerequisites
 
 - Unity Version: 2023 and above
-- NuGet Plugin for Unity: You need the NuGetForUnity plugin to manage dependencies.
+- [NuGet Plugin for Unity](https://github.com/GlitchEnzo/NuGetForUnity): You need the NuGetForUnity plugin to add dependencies.
 - PeterO.CBOR Library: The code uses the PeterO.CBOR library for encoding/decoding CBOR data (via NuGet).
 
 ## Installation
